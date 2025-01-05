@@ -72,6 +72,28 @@ This repository contains the code and resources for implementing various algorit
 - `securities_master.sql`: Database schema
 - `changelog.md`: Version history and changes
 
+### Chapter 8: Market Data Integration and Futures
+- `cont_futures.py`: 
+  - Implements continuous futures contract construction
+  - Creates rollover weight matrices for transitioning between contracts
+  - Handles contract expiration and rollover periods
+  - Example implementation using WTI Crude futures
+  - Supports customizable rollover days and contract transitions
+
+- `iqfeed.py`:
+  - Provides socket-based connection to IQFeed data service
+  - Implements buffered data reading from socket connection
+  - Handles historical data requests for multiple symbols
+  - Supports customizable data formats and time periods
+  - Saves downloaded data to CSV files
+
+- `quandl_data.py`:
+  - Downloads futures contract data from Quandl API
+  - Constructs futures contract symbols for different timeframes
+  - Supports bulk downloading of historical contracts
+  - Includes data visualization capabilities
+  - Handles contract code generation for various delivery months
+
 ## Testing Instructions
 1. Verify symbol insertion:
    ```bash

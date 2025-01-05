@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timezone, timedelta
 import logging
 from typing import List, Tuple, Optional
 import sqlite3
@@ -166,7 +166,8 @@ if __name__ == "__main__":
         
         for symbol_id, ticker in tickers:
             logger.info(f"Processing {ticker} (ID: {symbol_id})")
-            prices = manager.get_historical_data(ticker)
+            start_date = datetime.now() - timedelta(days=1)
+            prices = manager.get_historical_data(ticker, start_date=(start_date.year, start_date.month, start_date.day))
             manager.insert_prices(1, symbol_id, prices)
             
         logger.info("Price insertion completed successfully")

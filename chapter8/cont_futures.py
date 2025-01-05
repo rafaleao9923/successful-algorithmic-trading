@@ -1,71 +1,154 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-
-# cont_futures.py
-
-from __future__ import print_function
+#!/usr/bin/env python3
+from __future__ import annotations
 
 import datetime
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-import Quandl
+import yfinance as yf
 
+class ContinuousFutures:
+    """Handles continuous futures contracts using Yahoo Finance data"""
+    
+    def __init__(self, symbol: str, rollover_days: int = 5):
+        """
+        Initialize continuous futures handler
+        
+        Args:
+            symbol: Root symbol for futures contracts (e.g. 'CL' for crude oil)
+            rollover_days: Number of days before expiration to start rollover
+        """
+        self.symbol = symbol
+        self.rollover_days = rollover_days
+        
+    def get_contract_data(self, contract: str) -> pd.DataFrame:
+        """
+        Get historical data for a specific futures contract
+        
+        Args:
+            contract: Futures contract code (e.g. 'CLF2024')
+            
+        Returns:
+            DataFrame with historical prices
+        """
+        try:
+            # Yahoo Finance uses futures symbols like CL=F, ES=F etc.
+            ticker = f"{self.symbol}{contract[-4:]}={contract[-1]}"
+            data = yf.Ticker(ticker).history(period="max")
+            return data[['Open', 'High', 'Low', 'Close', 'Volume']]
+        except Exception as e:
+            print(f"Error fetching data for {contract}: {e}")
+            return pd.DataFrame()
 
-def futures_rollover_weights(start_date, expiry_dates, contracts, rollover_days=5):
-    """This constructs a pandas DataFrame that contains weights (between 0.0 and 1.0)
-    of contract positions to hold in order to carry out a rollover of rollover_days
-    prior to the expiration of the earliest contract. The matrix can then be
-    'multiplied' with another DataFrame containing the settle prices of each
-    contract in order to produce a continuous time series futures contract."""
+    def futures_rollover_weights(
+        self, 
+        start_date: datetime.date,
+        expiry_dates: Dict[str, datetime.date],
+        contracts: List[str]
+    ) -> pd.DataFrame:
+        """
+        Create rollover weights matrix for continuous futures
+        
+        Args:
+            start_date: Start date for the continuous series
+            expiry_dates: Dictionary of contract codes and their expiration dates
+            contracts: List of contract codes
+            
+        Returns:
+            DataFrame with rollover weights
+        """
+        dates = pd.date_range(start_date, expiry_dates[contracts[-1]], freq='B')
+        roll_weights = pd.DataFrame(
+            np.zeros((len(dates), len(contracts))),
+            index=dates, 
+            columns=contracts
+        )
+        
+        prev_date = roll_weights.index[0]
+        
+        for i, (contract, ex_date) in enumerate(expiry_dates.items()):
+            if i < len(expiry_dates) - 1:
+                # Full weight before rollover period
+                roll_weights.loc[prev_date:ex_date - pd.offsets.BDay(), contract] = 1
+                
+                # Rollover period weights
+                roll_rng = pd.date_range(
+                    end=ex_date - pd.offsets.BDay(),
+                    periods=self.rollover_days + 1,
+                    freq='B'
+                )
+                
+                decay_weights = np.linspace(0, 1, self.rollover_days + 1)
+                roll_weights.loc[roll_rng, contract] = 1 - decay_weights
+                roll_weights.loc[roll_rng, contracts[i+1]] = decay_weights
+            else:
+                roll_weights.loc[prev_date:, contract] = 1
+                
+            prev_date = ex_date
+            
+        return roll_weights
 
-    # Construct a sequence of dates beginning from the earliest contract start
-    # date to the end date of the final contract
-    dates = pd.date_range(start_date, expiry_dates[-1], freq='B')
+    def create_continuous_series(self, contracts: List[str]) -> pd.Series:
+        """
+        Create continuous futures series
+        
+        Args:
+            contracts: List of contract codes in order
+            
+        Returns:
+            Continuous futures price series
+        """
+        # Get expiration dates
+        expiry_dates = self._get_expiry_dates(contracts)
+        
+        # Get data for all contracts
+        contract_data = {
+            contract: self.get_contract_data(contract)
+            for contract in contracts
+        }
+        
+        # Create weights matrix
+        weights = self.futures_rollover_weights(
+            min(df.index[0] for df in contract_data.values()),
+            expiry_dates,
+            contracts
+        )
+        
+        # Create continuous series
+        prices = pd.concat(
+            [df['Close'].rename(contract) for contract, df in contract_data.items()],
+            axis=1
+        )
+        
+        return (prices * weights).sum(1).dropna()
 
-    # Create the 'roll weights' DataFrame that will store the multipliers for
-    # each contract (between 0.0 and 1.0)
-    roll_weights = pd.DataFrame(np.zeros((len(dates), len(contracts))),
-                                index=dates, columns=contracts)
-    prev_date = roll_weights.index[0]
+    def _get_expiry_dates(self, contracts: List[str]) -> Dict[str, datetime.date]:
+        """
+        Get expiration dates for contracts
+        
+        Args:
+            contracts: List of contract codes
+            
+        Returns:
+            Dictionary mapping contracts to expiration dates
+        """
+        # This is a simplified implementation - in practice you would need
+        # to get actual expiration dates from the exchange or data provider
+        return {
+            contract: datetime.date(int(contract[-4:]), self._get_expiry_month(contract[-1]), 15)
+            for contract in contracts
+        }
 
-    # Loop through each contract and create the specific weightings for
-    # each contract depending upon the settlement date and rollover_days
-    for i, (item, ex_date) in enumerate(expiry_dates.iteritems()):
-        if i < len(expiry_dates) - 1:
-            roll_weights.ix[prev_date:ex_date - pd.offsets.BDay(), item] = 1
-            roll_rng = pd.date_range(end=ex_date - pd.offsets.BDay(),
-                                     periods=rollover_days + 1, freq='B')
-
-            # Create a sequence of roll weights (i.e. [0.0,0.2,...,0.8,1.0]
-            # and use these to adjust the weightings of each future
-            decay_weights = np.linspace(0, 1, rollover_days + 1)
-            roll_weights.ix[roll_rng, item] = 1 - decay_weights
-            roll_weights.ix[roll_rng, expiry_dates.index[i+1]] = decay_weights
-        else:
-            roll_weights.ix[prev_date:, item] = 1
-        prev_date = ex_date
-    return roll_weights
+    def _get_expiry_month(self, month_code: str) -> int:
+        """Map month codes to month numbers"""
+        return {'F': 1, 'G': 2, 'H': 3, 'J': 4, 'K': 5, 'M': 6,
+                'N': 7, 'Q': 8, 'U': 9, 'V': 10, 'X': 11, 'Z': 12}[month_code]
 
 if __name__ == "__main__":
-    # Download the current Front and Back (near and far) futures contracts
-    # for WTI Crude, traded on NYMEX, from Quandl.com. You will need to 
-    # adjust the contracts to reflect your current near/far contracts 
-    # depending upon the point at which you read this!
-    wti_near = Quandl.get("OFDP/FUTURE_CLF2014")
-    wti_far = Quandl.get("OFDP/FUTURE_CLG2014")
-    wti = pd.DataFrame({'CLF2014': wti_near['Settle'],
-                        'CLG2014': wti_far['Settle']}, index=wti_far.index)
-
-    # Create the dictionary of expiry dates for each contract
-    expiry_dates = pd.Series({'CLF2014': datetime.datetime(2013, 12, 19),
-                              'CLG2014': datetime.datetime(2014, 2, 21)}).order()
-
-    # Obtain the rollover weighting matrix/DataFrame
-    weights = futures_rollover_weights(wti_near.index[0], expiry_dates, wti.columns)
-
-    # Construct the continuous future of the WTI CL contracts
-    wti_cts = (wti * weights).sum(1).dropna()
-
-    # Output the merged series of contract settle prices
-    print(wti_cts.tail(60))
+    # Example usage for crude oil futures
+    cf = ContinuousFutures('CL')
+    contracts = ['CLF2024', 'CLG2024', 'CLH2024', 'CLJ2024']
+    
+    continuous_series = cf.create_continuous_series(contracts)
+    print(continuous_series.tail())

@@ -79,82 +79,86 @@ class SymbolManager:
             logger.error(f"Error fetching S&P500 symbols: {e}")
             raise
 
-def insert_symbols(self, symbols: List[Tuple]):
-    """Insert or update symbols in database"""
-    try:
-        now = datetime.now(timezone.utc)
-        
-        # Prepare SQL for checking existing records
-        check_sql = """
-            SELECT ticker, name, sector, sub_industry, headquarter, 
-                   date_added, cik, founded, currency
-            FROM symbol 
-            WHERE ticker = ? AND exchange_id = ?
-        """
-        
-        # Prepare update SQL
-        update_sql = """
-            UPDATE symbol 
-            SET name = ?, 
-                sector = ?, 
-                sub_industry = ?, 
-                headquarter = ?,
-                date_added = ?,
-                cik = ?,
-                founded = ?,
-                currency = ?,
-                last_updated_date = ?
-            WHERE ticker = ? AND exchange_id = ?
-        """
-        
-        # Prepare insert SQL
-        insert_sql = """
-            INSERT INTO symbol 
-            (exchange_id, ticker, instrument, name, sector, sub_industry, 
-             headquarter, date_added, cik, founded, currency, created_date, last_updated_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        
-        updates = 0
-        inserts = 0
-        
-        for symbol in symbols:
-            exchange_id, ticker = symbol[0], symbol[1]
+    def insert_symbols(self, symbols: List[Tuple]):
+        """Insert or update symbols in database"""
+        try:
+            now = datetime.now(timezone.utc)
             
-            # Check if symbol exists
-            self.cursor.execute(check_sql, (ticker, exchange_id))
-            existing = self.cursor.fetchone()
+            # Prepare SQL for checking existing records
+            check_sql = """
+                SELECT ticker, name, sector, sub_industry, headquarter, 
+                    date_added, cik, founded, currency
+                FROM symbol 
+                WHERE ticker = ?
+            """
             
-            if existing:
-                # Compare relevant fields to see if an update is needed
-                current_values = symbol[4:11]  # Slice of values to compare (name through currency)
-                existing_values = tuple(existing)[0:7]  # Corresponding values from existing record
+            # Prepare update SQL
+            update_sql = """
+                UPDATE symbol 
+                SET name = ?, 
+                    sector = ?, 
+                    sub_industry = ?, 
+                    headquarter = ?,
+                    date_added = ?,
+                    cik = ?,
+                    founded = ?,
+                    currency = ?,
+                    last_updated_date = ?
+                WHERE ticker = ?
+            """
+            
+            # Prepare insert SQL - Make sure this matches your table structure exactly
+            insert_sql = """
+                INSERT INTO symbol 
+                (exchange_id, ticker, instrument, name, sector, sub_industry, 
+                headquarter, date_added, cik, founded, currency, created_date, last_updated_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            
+            updates = 0
+            inserts = 0
+            
+            for symbol in symbols:
+                # Assuming symbol tuple structure matches:
+                # (exchange_id, ticker, instrument, name, sector, sub_industry, headquarter, date_added, cik, founded, currency)
+                ticker = symbol[1]
                 
-                if current_values != existing_values:
-                    # Update if there are differences
-                    update_values = list(symbol[4:11])  # name through currency
-                    update_values.append(now)  # last_updated_date
-                    update_values.extend([ticker, exchange_id])  # WHERE clause values
-                    self.cursor.execute(update_sql, update_values)
-                    updates += 1
-            else:
-                # Insert new record
-                insert_values = list(symbol)
-                insert_values.extend([now, now])  # created_date and last_updated_date
-                self.cursor.execute(insert_sql, insert_values)
-                inserts += 1
-        
-        self.conn.commit()
-        logger.info(f"Symbols processed: {len(symbols)} - Updated: {updates}, Inserted: {inserts}")
-        
-    except sqlite3.Error as e:
-        self.conn.rollback()
-        logger.error(f"Database error: {e}")
-        raise
-    except Exception as e:
-        self.conn.rollback()
-        logger.error(f"Error processing symbols: {e}")
-        raise
+                # Check if symbol exists - only using ticker for simplicity
+                self.cursor.execute(check_sql, (ticker,))
+                existing = self.cursor.fetchone()
+                
+                if existing:
+                    # Compare relevant fields to see if an update is needed
+                    # Adjust indices based on your tuple structure
+                    current_values = symbol[3:11]  # name through currency
+                    existing_values = tuple(existing)[1:9]  # corresponding values from existing record
+                    
+                    if current_values != existing_values:
+                        # Update if there are differences
+                        # Prepare update values: all fields plus ticker for WHERE clause
+                        update_values = list(symbol[3:11])  # name through currency
+                        update_values.append(now)  # last_updated_date
+                        update_values.append(ticker)  # WHERE clause value
+                        self.cursor.execute(update_sql, update_values)
+                        updates += 1
+                else:
+                    # Insert new record
+                    insert_values = list(symbol)
+                    insert_values.extend([now, now])  # Add created_date and last_updated_date
+                    self.cursor.execute(insert_sql, insert_values)
+                    inserts += 1
+            
+            self.conn.commit()
+            logger.info(f"Symbols processed: {len(symbols)} - Updated: {updates}, Inserted: {inserts}")
+            
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Database error: {e}")
+            raise
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error processing symbols: {e}")
+            raise
 
 if __name__ == "__main__":
     try:
