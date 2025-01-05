@@ -1,85 +1,90 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-
-# insert_symbols.py
-
-from __future__ import print_function
-
-from datetime import datetime
-from math import ceil
-
-import bs4
-import MySQLdb as mdb
+#!/usr/bin/env python3
+from typing import List, Tuple
+from datetime import datetime, timezone
+import logging
+import sqlite3
+from bs4 import BeautifulSoup
 import requests
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def obtain_parse_wiki_snp500():
-    """
-    Download and parse the Wikipedia list of S&P500 
-    constituents using requests and BeautifulSoup.
+from shared_config import DB_PATH
 
-    Returns a list of tuples for to add to MySQL.
-    """
-    # Stores the current time, for the created_at record
-    now = datetime.utcnow()
+class SymbolManager:
+    def __init__(self, db_path=DB_PATH):
+        self.conn = sqlite3.connect(db_path)
+        self.conn.row_factory = sqlite3.Row
+        self.cursor = self.conn.cursor()
 
-    # Use requests and BeautifulSoup to download the 
-    # list of S&P500 companies and obtain the symbol table
-    response = requests.get(
-        "http://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    )
-    soup = bs4.BeautifulSoup(response.text)
+    def __del__(self):
+        self.conn.close()
 
-    # This selects the first table, using CSS Selector syntax
-    # and then ignores the header row ([1:])
-    symbolslist = soup.select('table')[0].select('tr')[1:]
+    def get_sp500_symbols(self) -> List[Tuple]:
+        """Fetch and parse S&P 500 symbols from Wikipedia"""
+        try:
+            now = datetime.utcnow()
+            response = requests.get(
+                "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+                timeout=10
+            )
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            symbolslist = soup.select('table.wikitable')[0].select('tr')[1:]
+            
+            symbols = []
+            for symbol in symbolslist:
+                tds = symbol.select('td')
+                symbols.append((
+                    tds[0].select('a')[0].text.strip(),  # Ticker
+                    tds[0].select('a')[0].get('href', '').split('quote/')[1].split(':')[0],  # Ticker
+                    'stock',
+                    tds[1].select('a')[0].text.strip(),  # Name
+                    tds[2].text.strip(),  # Sector
+                    tds[3].text.strip(),  # Sub-Industry
+                    tds[4].text.strip(),  # Headquaters
+                    tds[5].text.strip(),  # Date added
+                    tds[6].text.strip(),  # CIK
+                    tds[7].text.strip(),  # Founded
+                    'USD', now, now
+                ))
+            return symbols
+        except Exception as e:
+            logger.error(f"Error fetching S&P500 symbols: {e}")
+            raise
 
-    # Obtain the symbol information for each 
-    # row in the S&P500 constituent table
-    symbols = []
-    for i, symbol in enumerate(symbolslist):
-        tds = symbol.select('td')
-        symbols.append(
-            (
-                tds[0].select('a')[0].text,  # Ticker
-                'stock', 
-                tds[1].select('a')[0].text,  # Name
-                tds[3].text,  # Sector
-                'USD', now, now
-            ) 
-        )
-    return symbols
+    def insert_symbols(self, symbols: List[Tuple]):
+        """Insert symbols into database"""
+        try:
+            # Add debug logging here
+            for symbol in symbols:
+                logger.info(f"Attempting to insert symbol: {symbol}")
+                logger.info(f"Types of values: {[type(x) for x in symbol]}")
 
-
-def insert_snp500_symbols(symbols):
-    """
-    Insert the S&P500 symbols into the MySQL database.
-    """
-    # Connect to the MySQL instance
-    db_host = 'localhost'
-    db_user = 'sec_user'
-    db_pass = 'password'
-    db_name = 'securities_master'
-    con = mdb.connect(
-        host=db_host, user=db_user, passwd=db_pass, db=db_name
-    )
-
-    # Create the insert strings
-    column_str = """ticker, instrument, name, sector, 
-                 currency, created_date, last_updated_date
-                 """
-    insert_str = ("%s, " * 7)[:-2]
-    final_str = "INSERT INTO symbol (%s) VALUES (%s)" % \
-        (column_str, insert_str)
-
-    # Using the MySQL connection, carry out 
-    # an INSERT INTO for every symbol
-    with con: 
-        cur = con.cursor()
-        cur.executemany(final_str, symbols)
-
+            insert_sql = """
+                INSERT INTO symbol 
+                (ticker, instrument, name, sector, currency, created_date, last_updated_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+            self.cursor.executemany(insert_sql, symbols)
+            self.conn.commit()
+            logger.info(f"Successfully inserted {len(symbols)} symbols")
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Database error: {e}")
+            raise
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error inserting symbols: {e}")
+            raise
 
 if __name__ == "__main__":
-    symbols = obtain_parse_wiki_snp500()
-    insert_snp500_symbols(symbols)
-    print("%s symbols were successfully added." % len(symbols))
+    try:
+        manager = SymbolManager()
+        symbols = manager.get_sp500_symbols()
+        manager.insert_symbols(symbols)
+    except Exception as e:
+        logger.error(f"Script failed: {e}")
+        exit(1)

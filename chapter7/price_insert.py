@@ -1,122 +1,135 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-
-# price_retrieval.py
-
-from __future__ import print_function
-
-import datetime
-import warnings
-
-import MySQLdb as mdb
+#!/usr/bin/env python3
+from datetime import datetime, date
+import logging
+from typing import List, Tuple, Optional
+import sqlite3
 import requests
+from pydantic import BaseModel, field_validator
+from datetime import timezone
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Obtain a database connection to the MySQL instance
-db_host = 'localhost'
-db_user = 'sec_user'
-db_pass = 'password'
-db_name = 'securities_master'
-con = mdb.connect(db_host, db_user, db_pass, db_name)
+class PriceData(BaseModel):
+    date: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    adj_close: float
+    volume: int
 
+    @field_validator('date')
+    def validate_date(cls, value):
+        if value > datetime.now():
+            raise ValueError('Date cannot be in the future')
+        return value
 
-def obtain_list_of_db_tickers():
-    """
-    Obtains a list of the ticker symbols in the database.
-    """
-    with con: 
-        cur = con.cursor()
-        cur.execute("SELECT id, ticker FROM symbol")
-        data = cur.fetchall()
-        return [(d[0], d[1]) for d in data]
+from shared_config import DB_PATH
 
+class PriceManager:
+    def __init__(self, db_path=DB_PATH):
+        self.conn = sqlite3.connect(db_path)
+        self.conn.row_factory = sqlite3.Row
+        self.cursor = self.conn.cursor()
 
-def get_daily_historic_data_yahoo(
-        ticker, start_date=(2000,1,1),
-        end_date=datetime.date.today().timetuple()[0:3]
-    ):
-    """
-    Obtains data from Yahoo Finance returns and a list of tuples.
+    def __del__(self):
+        self.conn.close()
 
-    ticker: Yahoo Finance ticker symbol, e.g. "GOOG" for Google, Inc.
-    start_date: Start date in (YYYY, M, D) format
-    end_date: End date in (YYYY, M, D) format
-    """
-    # Construct the Yahoo URL with the correct integer query parameters
-    # for start and end dates. Note that some parameters are zero-based!
-    ticker_tup = (
-        ticker, start_date[1]-1, start_date[2], 
-        start_date[0], end_date[1]-1, end_date[2], 
-        end_date[0]
-    )
-    yahoo_url = "http://ichart.finance.yahoo.com/table.csv"
-    yahoo_url += "?s=%s&a=%s&b=%s&c=%s&d=%s&e=%s&f=%s"
-    yahoo_url = yahoo_url % ticker_tup
+    def get_db_tickers(self) -> List[Tuple[int, str]]:
+        """Get list of tickers from database"""
+        try:
+            self.cursor.execute("SELECT id, ticker FROM symbol")
+            return [(row['id'], row['ticker']) for row in self.cursor.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Database error: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching tickers: {e}")
+            raise
 
-    # Try connecting to Yahoo Finance and obtaining the data
-    # On failure, print an error message.
-    try:
-        yf_data = requests.get(yahoo_url).text.split("\n")[1:-1]
-        prices = []
-        for y in yf_data:
-            p = y.strip().split(',')
-            prices.append( 
-                (datetime.datetime.strptime(p[0], '%Y-%m-%d'),
-                p[1], p[2], p[3], p[4], p[5], p[6]) 
-            )
-    except Exception as e:
-        print("Could not download Yahoo data: %s" % e)
-    return prices
+    def get_historical_data(self, ticker: str, start_date: Tuple[int, int, int] = (2000, 1, 1),
+                          end_date: Tuple[int, int, int] = None) -> List[PriceData]:
+        """Get historical data from Yahoo Finance"""
+        if end_date is None:
+            end_date = date.today().timetuple()[:3]
+            
+        try:
+            url = self._build_yahoo_url(ticker, start_date, end_date)
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            prices = []
+            for line in response.text.splitlines()[1:]:
+                if not line.strip():
+                    continue
+                parts = line.strip().split(',')
+                prices.append(PriceData(
+                    date=datetime.strptime(parts[0], '%Y-%m-%d'),
+                    open=float(parts[1]),
+                    high=float(parts[2]),
+                    low=float(parts[3]),
+                    close=float(parts[4]),
+                    adj_close=float(parts[5]),
+                    volume=int(parts[6])
+                ))
+            return prices
+        except Exception as e:
+            logger.error(f"Error fetching data for {ticker}: {e}")
+            raise
 
+    def _build_yahoo_url(self, ticker: str, start_date: Tuple[int, int, int],
+                        end_date: Tuple[int, int, int]) -> str:
+        """Build Yahoo Finance URL"""
+        return (
+            "https://query1.finance.yahoo.com/v7/finance/download/"
+            f"{ticker}?period1={int(datetime(*start_date).timestamp())}"
+            f"&period2={int(datetime(*end_date).timestamp())}"
+            "&interval=1d&events=history&includeAdjustedClose=true"
+        )
 
-def insert_daily_data_into_db(
-        data_vendor_id, symbol_id, daily_data
-    ):
-    """
-    Takes a list of tuples of daily data and adds it to the
-    MySQL database. Appends the vendor ID and symbol ID to the data.
-
-    daily_data: List of tuples of the OHLC data (with 
-    adj_close and volume)
-    """
-    # Create the time now
-    now = datetime.datetime.utcnow()
-
-    # Amend the data to include the vendor ID and symbol ID
-    daily_data = [
-        (data_vendor_id, symbol_id, d[0], now, now,
-        d[1], d[2], d[3], d[4], d[5], d[6]) 
-        for d in daily_data
-    ]
-
-    # Create the insert strings
-    column_str = """data_vendor_id, symbol_id, price_date, created_date, 
-                 last_updated_date, open_price, high_price, low_price, 
-                 close_price, volume, adj_close_price"""
-    insert_str = ("%s, " * 11)[:-2]
-    final_str = "INSERT INTO daily_price (%s) VALUES (%s)" % \
-        (column_str, insert_str)
-
-    # Using the MySQL connection, carry out an INSERT INTO for every symbol
-    with con: 
-        cur = con.cursor()
-        cur.executemany(final_str, daily_data)
-
+    def insert_prices(self, vendor_id: int, symbol_id: int, prices: List[PriceData]):
+        """Insert prices into database"""
+        try:
+            insert_sql = """
+                INSERT INTO daily_price 
+                (data_vendor_id, symbol_id, price_date, created_date, last_updated_date,
+                 open_price, high_price, low_price, close_price, adj_close_price, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            now = datetime.utcnow()
+            data_to_insert = [
+                (
+                    vendor_id, symbol_id, price.date, now, now,
+                    price.open, price.high, price.low, price.close,
+                    price.adj_close, price.volume
+                )
+                for price in prices
+            ]
+            self.cursor.executemany(insert_sql, data_to_insert)
+            self.conn.commit()
+            logger.info(f"Inserted {len(prices)} prices for symbol ID {symbol_id}")
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Database error: {e}")
+            raise
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error inserting prices: {e}")
+            raise
 
 if __name__ == "__main__":
-    # This ignores the warnings regarding Data Truncation
-    # from the Yahoo precision to Decimal(19,4) datatypes
-    warnings.filterwarnings('ignore')
-
-    # Loop over the tickers and insert the daily historical
-    # data into the database
-    tickers = obtain_list_of_db_tickers()
-    lentickers = len(tickers)
-    for i, t in enumerate(tickers):
-        print(
-            "Adding data for %s: %s out of %s" % 
-            (t[1], i+1, lentickers)
-        )
-        yf_data = get_daily_historic_data_yahoo(t[1])
-        insert_daily_data_into_db('1', t[0], yf_data)
-    print("Successfully added Yahoo Finance pricing data to DB.")
+    try:
+        manager = PriceManager()
+        tickers = manager.get_db_tickers()
+        
+        for symbol_id, ticker in tickers:
+            logger.info(f"Processing {ticker} (ID: {symbol_id})")
+            prices = manager.get_historical_data(ticker)
+            manager.insert_prices(1, symbol_id, prices)
+            
+        logger.info("Price insertion completed successfully")
+    except Exception as e:
+        logger.error(f"Script failed: {e}")
+        exit(1)
