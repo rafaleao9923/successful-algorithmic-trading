@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS symbol (
     instrument TEXT NOT NULL,
     name TEXT,
     sector TEXT,
+    sub_industry TEXT,
+    headquarter TEXT,
+    date_added TEXT,
+    cik TEXT,
+    founded TEXT,
     currency TEXT NOT NULL DEFAULT 'USD',
     created_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_updated_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -67,6 +72,12 @@ CREATE TABLE IF NOT EXISTS schema_version (
 
 -- Insert initial data vendor
 INSERT INTO data_vendor (id, name) VALUES (1, 'Yahoo Finance');
+
+-- Insert exchange data
+INSERT INTO exchange (abbrev, name, city, country, currency) VALUES
+('NYSE', 'New York Stock Exchange', 'New York', 'USA', 'USD'),
+('NASDAQ', 'NASDAQ Stock Market', 'New York', 'USA', 'USD'),
+('CBOE', 'Chicago Board Options Exchange', 'Chicago', 'USA', 'USD');
 
 -- Insert initial version
 INSERT INTO schema_version (version) VALUES ('3.0');

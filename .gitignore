@@ -3,3 +3,5 @@
 .env
 
 test.*
+
+chapter7/securities_master.db

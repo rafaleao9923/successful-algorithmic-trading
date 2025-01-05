@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import logging
 from typing import List, Tuple, Optional
 import sqlite3
 import requests
+import random
+import time
+from json import loads
 from pydantic import BaseModel, field_validator
-from datetime import timezone
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +24,7 @@ class PriceData(BaseModel):
 
     @field_validator('date')
     def validate_date(cls, value):
-        if value > datetime.now():
+        if value > datetime.now(timezone.utc):
             raise ValueError('Date cannot be in the future')
         return value
 
@@ -33,6 +35,13 @@ class PriceManager:
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://finance.yahoo.com',
+            'Origin': 'https://finance.yahoo.com',
+        }
 
     def __del__(self):
         self.conn.close()
@@ -49,56 +58,76 @@ class PriceManager:
             logger.error(f"Error fetching tickers: {e}")
             raise
 
-    def get_historical_data(self, ticker: str, start_date: Tuple[int, int, int] = (2000, 1, 1),
+    def get_historical_data(self, ticker: str, start_date: Tuple[int, int, int] = (1900, 1, 1),
                           end_date: Tuple[int, int, int] = None) -> List[PriceData]:
         """Get historical data from Yahoo Finance"""
         if end_date is None:
             end_date = date.today().timetuple()[:3]
             
         try:
-            url = self._build_yahoo_url(ticker, start_date, end_date)
-            response = requests.get(url, timeout=10)
+            ticker = ticker.replace('.', '-') if '.' in ticker else ticker
+
+            print(f"Fetching data for {ticker}")
+            params = {
+                'events': 'capitalGain|div|split',
+                'formatted': 'true',
+                'includeAdjustedClose': 'true',
+                'interval': '1d',
+                'period1': str(int(datetime(*start_date, tzinfo=timezone.utc).timestamp())),
+                'period2': str(int(datetime(*end_date, tzinfo=timezone.utc).timestamp())),
+                'symbol': ticker,
+                'userYfid': 'true',
+                'lang': 'en-US',
+                'region': 'US',
+            }
+
+            time.sleep(random.uniform(1.0, 3.0))
+
+            response = requests.get(
+                f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}',
+                params=params,
+                headers=self.headers,
+                timeout=10
+            )
             response.raise_for_status()
             
+            data = loads(response.text)
+            result = data['chart']['result'][0]
+            quote = result['indicators']['quote'][0]
+            
             prices = []
-            for line in response.text.splitlines()[1:]:
-                if not line.strip():
+            timestamps = result['timestamp']
+            opens = quote['open']
+            highs = quote['high']
+            lows = quote['low']
+            closes = quote['close']
+            volumes = quote['volume']
+            adj_closes = result['indicators']['adjclose'][0]['adjclose']
+
+            for i in range(len(timestamps)):
+                # Skip if any required value is None
+                if any(x[i] is None for x in [opens, highs, lows, closes, volumes, adj_closes]):
                     continue
-                parts = line.strip().split(',')
+                    
                 prices.append(PriceData(
-                    date=datetime.strptime(parts[0], '%Y-%m-%d'),
-                    open=float(parts[1]),
-                    high=float(parts[2]),
-                    low=float(parts[3]),
-                    close=float(parts[4]),
-                    adj_close=float(parts[5]),
-                    volume=int(parts[6])
+                    date=datetime.fromtimestamp(timestamps[i], tz=timezone.utc),
+                    open=opens[i],
+                    high=highs[i],
+                    low=lows[i],
+                    close=closes[i],
+                    adj_close=adj_closes[i],
+                    volume=int(volumes[i])
                 ))
             return prices
         except Exception as e:
             logger.error(f"Error fetching data for {ticker}: {e}")
             raise
 
-    def _build_yahoo_url(self, ticker: str, start_date: Tuple[int, int, int],
-                        end_date: Tuple[int, int, int]) -> str:
-        """Build Yahoo Finance URL"""
-        return (
-            "https://query1.finance.yahoo.com/v7/finance/download/"
-            f"{ticker}?period1={int(datetime(*start_date).timestamp())}"
-            f"&period2={int(datetime(*end_date).timestamp())}"
-            "&interval=1d&events=history&includeAdjustedClose=true"
-        )
-
     def insert_prices(self, vendor_id: int, symbol_id: int, prices: List[PriceData]):
-        """Insert prices into database"""
+        """Insert or update prices in database"""
         try:
-            insert_sql = """
-                INSERT INTO daily_price 
-                (data_vendor_id, symbol_id, price_date, created_date, last_updated_date,
-                 open_price, high_price, low_price, close_price, adj_close_price, volume)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            now = datetime.utcnow()
+            # First, prepare the data
+            now = datetime.now(timezone.utc)
             data_to_insert = [
                 (
                     vendor_id, symbol_id, price.date, now, now,
@@ -107,16 +136,27 @@ class PriceManager:
                 )
                 for price in prices
             ]
-            self.cursor.executemany(insert_sql, data_to_insert)
+            
+            # Use INSERT OR REPLACE (upsert) with a unique constraint on symbol_id and price_date
+            upsert_sql = """
+                INSERT OR REPLACE INTO daily_price 
+                (data_vendor_id, symbol_id, price_date, created_date, last_updated_date,
+                open_price, high_price, low_price, close_price, adj_close_price, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            
+            # Execute the upsert
+            self.cursor.executemany(upsert_sql, data_to_insert)
             self.conn.commit()
-            logger.info(f"Inserted {len(prices)} prices for symbol ID {symbol_id}")
+            logger.info(f"Upserted {len(prices)} prices for symbol ID {symbol_id}")
+            
         except sqlite3.Error as e:
             self.conn.rollback()
             logger.error(f"Database error: {e}")
             raise
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"Error inserting prices: {e}")
+            logger.error(f"Error upserting prices: {e}")
             raise
 
 if __name__ == "__main__":

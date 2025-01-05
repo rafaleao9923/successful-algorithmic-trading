@@ -17,9 +17,10 @@ This repository contains the code and resources for implementing various algorit
    ```bash
    docker cp chapter7/securities_master.sql sqlite3:/tmp/
    ```
-2. Create the SQLite database:
+2. Create the SQLite database and set permission:
    ```bash
    docker exec sqlite3 sh -c "sqlite3 /data/db/securities_master.db < /tmp/securities_master.sql"
+   sudo chmod 666 {Docker_sqlite3}/sqlite3/database/securities_master.db
    ```
 
 *Alternative approaches:*
@@ -27,6 +28,12 @@ This repository contains the code and resources for implementing various algorit
   ```bash
   docker exec sqlite3 sh -c "sqlite3 /data/db/securities_master.db < /data/db/../chapter7/securities_master.sql"
   ```
+
+3. Update new data if needed:
+   ```bash
+   docker exec -it sqlite3 sqlite3 /data/db/securities_master.db
+   DELETE FROM symbol
+   ```
 
 ### 3. Running the Data Pipeline
 1. Insert S&P500 symbols:
