@@ -4,7 +4,7 @@
 
 test.*
 
-securities_master.db
+*.db
 
 __pycache__
 prompts.txt

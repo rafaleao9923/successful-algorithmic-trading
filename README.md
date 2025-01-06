@@ -32,7 +32,7 @@ This repository contains the code and resources for implementing various algorit
 3. Update new data if needed:
    ```bash
    docker exec -it sqlite3 sqlite3 /data/db/securities_master.db
-   DELETE FROM symbol
+   DELETE FROM symbol;
    ```
 
 ### 3. Running the Data Pipeline

@@ -84,11 +84,11 @@ CREATE TABLE IF NOT EXISTS equity (
     symbol_id INTEGER PRIMARY KEY,
     sector TEXT,  -- Sector classification (e.g., "Technology")
     industry TEXT,  -- Industry classification
-    market_cap_category TEXT,  -- e.g., Large Cap, Mid Cap, Small Cap
+    -- market_cap_category TEXT,  -- e.g., Large Cap, Mid Cap, Small Cap
     headquarters_country_id INTEGER,  -- Reference to the country
     cik TEXT,  -- Central Index Key (for US securities)
     incorporation_country_id INTEGER,  -- Reference to the country
-    fiscal_year_end TEXT,  -- Fiscal year end date
+    -- fiscal_year_end TEXT,  -- Fiscal year end date
     FOREIGN KEY(symbol_id) REFERENCES symbol(id) ON DELETE CASCADE,
     FOREIGN KEY(headquarters_country_id) REFERENCES country(id) ON DELETE RESTRICT,
     FOREIGN KEY(incorporation_country_id) REFERENCES country(id) ON DELETE RESTRICT
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS bond (
     issuer TEXT,  -- Entity issuing the bond (e.g., "US Treasury")
     maturity_date TEXT,  -- Date the bond matures
     coupon_rate REAL,  -- Annual interest rate
-    face_value REAL,  -- Face value of the bond
+    -- face_value REAL,  -- Face value of the bond
     FOREIGN KEY(symbol_id) REFERENCES symbol(id) ON DELETE CASCADE
 );
 
@@ -109,28 +109,30 @@ CREATE TABLE IF NOT EXISTS etf (
     symbol_id INTEGER PRIMARY KEY,
     issuer TEXT,  -- Entity managing the ETF (e.g., "Vanguard")
     expense_ratio REAL,  -- Annual management fee as a percentage
-    holdings_count INTEGER,  -- Number of underlying holdings
+    -- holdings_count INTEGER,  -- Number of underlying holdings
+    -- t.b.d
     FOREIGN KEY(symbol_id) REFERENCES symbol(id) ON DELETE CASCADE
 );
 
 -- Fund Table (extends symbol)
 CREATE TABLE IF NOT EXISTS fund (
     symbol_id INTEGER PRIMARY KEY,
-    fund_manager TEXT,  -- Entity managing the fund
-    inception_date TEXT,  -- Date the fund was launched
-    expense_ratio REAL,  -- Annual management fee as a percentage
+    issuer TEXT,  -- Entity managing the fund
+    -- inception_date TEXT,  -- Date the fund was launched
+    -- expense_ratio REAL,  -- Annual management fee as a percentage
+    -- t.b.d
     FOREIGN KEY(symbol_id) REFERENCES symbol(id) ON DELETE CASCADE
 );
 
 -- Index Table (extends symbol)
 CREATE TABLE IF NOT EXISTS market_index (
     symbol_id INTEGER PRIMARY KEY,
-    provider TEXT,  -- Entity providing the index (e.g., "S&P Dow Jones Indices")
-    calculation_method TEXT,  -- Methodology used to calculate the index
-    rebalance_frequency TEXT,  -- Frequency of rebalancing (e.g., "Quarterly")
+    -- provider TEXT,  -- Entity providing the index (e.g., "S&P Dow Jones Indices")
+    -- calculation_method TEXT,  -- Methodology used to calculate the index
+    -- rebalance_frequency TEXT,  -- Frequency of rebalancing (e.g., "Quarterly")
     total_constituents INTEGER,  -- Total number of constituents in the index
-    is_price_return BOOLEAN,  -- Indicates if the index is price return
-    is_total_return BOOLEAN,  -- Indicates if the index is total return
+    -- is_price_return BOOLEAN,  -- Indicates if the index is price return
+    -- is_total_return BOOLEAN,  -- Indicates if the index is total return
     base_value REAL,  -- Base value of the index
     base_date TEXT,  -- Base date of the index
     FOREIGN KEY(symbol_id) REFERENCES symbol(id) ON DELETE CASCADE
