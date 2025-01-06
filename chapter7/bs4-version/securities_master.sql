@@ -1,6 +1,7 @@
 -- SQLite-compatible Securities Master Database Schema
 -- Version 3.0
 -- Simplified for SQLite compatibility
+-- sqlite3 securities_master.db < securities_master.sql
 
 -- Exchange Table
 CREATE TABLE IF NOT EXISTS exchange (

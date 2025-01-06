@@ -1,0 +1,11 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "database": "${workspaceFolder:successful-algorithmic-trading}/chapter7/bs4-version/__pycache__ /home/hung/Public/leao/successful-algorithmic-trading/chapter7/bs4-version/.env /home/hung/Public/leao/successful-algorithmic-trading/chapter7/bs4-version/insert_symbols.py /home/hung/Public/leao/successful-algorithmic-trading/chapter7/bs4-version/price_insert.py /home/hung/Public/leao/successful-algorithmic-trading/chapter7/bs4-version/retrieving_data.py /home/hung/Public/leao/successful-algorithmic-trading/chapter7/bs4-version/securities_master.db /home/hung/Public/leao/successful-algorithmic-trading/chapter7/bs4-version/securities_master.sql /home/hung/Public/leao/successful-algorithmic-trading/chapter7/bs4-version/shared_config.py",
+            "name": "securities_master"
+        }
+    ],
+    "sqltools.useNodeRuntime": true
+}

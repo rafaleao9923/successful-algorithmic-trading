@@ -144,7 +144,6 @@ class SymbolManager:
                 else:
                     # Insert new record
                     insert_values = list(symbol)
-                    insert_values.extend([now, now])  # Add created_date and last_updated_date
                     self.cursor.execute(insert_sql, insert_values)
                     inserts += 1
             

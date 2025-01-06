@@ -4,4 +4,7 @@
 
 test.*
 
-chapter7/securities_master.db
+securities_master.db
+
+__pycache__
+prompts.txt
