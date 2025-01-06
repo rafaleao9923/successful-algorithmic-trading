@@ -1,54 +1,36 @@
-import scrapy
+from scrapy.item import Item, Field
+from datetime import datetime
 
+class SymbolItem(Item):
+    exchange_id = Field()
+    ticker = Field()
+    instrument = Field()
+    name = Field()
+    sector = Field()
+    sub_industry = Field()
+    headquarter = Field()
+    date_added = Field()
+    cik = Field()
+    founded = Field()
+    currency = Field()
+    created_date = Field()
+    last_updated_date = Field()
 
-class SymbolItem(scrapy.Item):
-    id = scrapy.Field()
-    exchange_id = scrapy.Field()
-    ticker = scrapy.Field()
-    instrument = scrapy.Field()
-    name = scrapy.Field()
-    sector = scrapy.Field()
-    sub_industry = scrapy.Field()
-    headquarter = scrapy.Field()
-    date_added = scrapy.Field()
-    cik = scrapy.Field()
-    founded = scrapy.Field()
-    currency = scrapy.Field()
-    created_date = scrapy.Field()
-    last_updated_date = scrapy.Field()
+class PriceItem(Item):
+    data_vendor_id = Field()
+    symbol_id = Field()
+    price_date = Field()
+    created_date = Field()
+    last_updated_date = Field()
+    open_price = Field()
+    high_price = Field()
+    low_price = Field()
+    close_price = Field()
+    adj_close_price = Field()
+    volume = Field()
 
-
-class PriceItem(scrapy.Item):
-    id = scrapy.Field()
-    data_vendor_id = scrapy.Field()
-    symbol_id = scrapy.Field()
-    price_date = scrapy.Field()
-    created_date = scrapy.Field()
-    last_updated_date = scrapy.Field()
-    open_price = scrapy.Field()
-    high_price = scrapy.Field()
-    low_price = scrapy.Field()
-    close_price = scrapy.Field()
-    adj_close_price = scrapy.Field()
-    volume = scrapy.Field()
-
-
-class ExchangeItem(scrapy.Item):
-    id = scrapy.Field()
-    abbrev = scrapy.Field()
-    name = scrapy.Field()
-    city = scrapy.Field()
-    country = scrapy.Field()
-    currency = scrapy.Field()
-    timezone_offset = scrapy.Field()
-    created_date = scrapy.Field()
-    last_updated_date = scrapy.Field()
-
-
-class DataVendorItem(scrapy.Item):
-    id = scrapy.Field()
-    name = scrapy.Field()
-    website_url = scrapy.Field()
-    support_email = scrapy.Field()
-    created_date = scrapy.Field()
-    last_updated_date = scrapy.Field()
+    def set_defaults(self):
+        now = datetime.now().isoformat()
+        self.setdefault('created_date', now)
+        self.setdefault('last_updated_date', now)
+        self.setdefault('data_vendor_id', 1)  # Yahoo Finance vendor ID

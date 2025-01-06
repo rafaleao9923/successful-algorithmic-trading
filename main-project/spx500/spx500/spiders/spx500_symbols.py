@@ -1,52 +1,58 @@
-from scrapy import Spider
-from spx500.items import SymbolItem
+import scrapy
 from datetime import datetime
+from spx500.items import SymbolItem
 
-class SymbolSpider(Spider):
+class SPX500SymbolsSpider(scrapy.Spider):
     name = 'spx500_symbols'
-    start_urls = [
-        'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies',
-    ]
+    allowed_domains = ['wikipedia.org']
+    start_urls = ['https://en.wikipedia.org/wiki/List_of_S%26P_500_companies']
+    
+    def _get_exchange_id(self, href):
+        if 'nasdaq.com' in href.lower():
+            return self._get_exchange_mapping('NASDAQ')
+        elif 'cboe.com' in href.lower():
+            return self._get_exchange_mapping('CBOE')
+        elif 'nyse.com' in href.lower():
+            return self._get_exchange_mapping('NYSE')
+        return self._get_exchange_mapping('NYSE')  # Default
 
+    def _get_exchange_mapping(self, abbrev):
+        # This should match your exchange table IDs
+        mappings = {
+            'NYSE': 1,
+            'NASDAQ': 2,
+            'CBOE': 3
+        }
+        return mappings.get(abbrev, 1)  # Default to NYSE (1) if not found
+    
     def parse(self, response):
-        symbols_list = response.css('table.wikitable tr')[1:]
-
-        for symbol in symbols_list:
-            tds = symbol.css('td')
-            href = tds[0].css('a::attr(href)').get('')
-
-            # Extract exchange from URL
-            if 'nasdaq.com' in href.lower():
-                exchange = 'NASDAQ'
-            elif 'cboe.com' in href.lower():
-                exchange = 'CBOE'
-            elif 'nyse.com' in href.lower():
-                exchange = 'XNYS' if ':XNYS' in href else 'NYSE'
-            else:
-                exchange = 'NYSE'  # Default
-
-            # Map exchange names to IDs based on the database
-            exchange_map = {
-                'NYSE': 1,
-                'NASDAQ': 2,
-                'CBOE': 3,
-                'XNYS': 1  # Map XNYS to NYSE ID
-            }
-            exchange_id = exchange_map.get(exchange, 1)  # Default to NYSE (1) if not found
-
-            symbol_item = SymbolItem()
-            symbol_item['exchange_id'] = exchange_id
-            symbol_item['ticker'] = tds[0].css('a::text').get().strip()
-            symbol_item['instrument'] = 'equity'
-            symbol_item['name'] = tds[1].css('a::text').get().strip()
-            symbol_item['sector'] = tds[2].css('::text').get().strip()
-            symbol_item['sub_industry'] = tds[3].css('::text').get().strip()
-            symbol_item['headquarter'] = tds[4].css('::text').get().strip()
-            symbol_item['date_added'] = tds[5].css('::text').get().strip()
-            symbol_item['cik'] = tds[6].css('::text').get().strip()
-            symbol_item['founded'] = tds[7].css('::text').get().strip()
-            symbol_item['currency'] = 'USD'
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            symbol_item['created_date'] = now
-            symbol_item['last_updated_date'] = now
-            yield symbol_item
+        now = datetime.now().isoformat()
+        
+        # Select the first wikitable
+        table = response.css('table.wikitable')[0]
+        
+        # Process each row except the header
+        for row in table.css('tr')[1:]:
+            cells = row.css('td')
+            if not cells:  # Skip if no cells (header row)
+                continue
+                
+            href = cells[0].css('a::attr(href)').get('')
+            exchange_id = self._get_exchange_id(href)
+            
+            item = SymbolItem()
+            item['exchange_id'] = exchange_id
+            item['ticker'] = cells[0].css('a::text').get().strip()
+            item['instrument'] = 'stock'
+            item['name'] = cells[1].css('a::text').get().strip()
+            item['sector'] = cells[2].css('::text').get().strip()
+            item['sub_industry'] = cells[3].css('::text').get().strip()
+            item['headquarter'] = cells[4].css('::text').get().strip()
+            item['date_added'] = cells[5].css('::text').get().strip()
+            item['cik'] = cells[6].css('::text').get().strip()
+            item['founded'] = cells[7].css('::text').get().strip()
+            item['currency'] = 'USD'
+            item['created_date'] = now
+            item['last_updated_date'] = now
+            
+            yield item
