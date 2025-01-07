@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 import sqlite3
 from spx500.items import PriceItem
+from urllib.parse import urlencode
 
 class SPX500PricesSpider(scrapy.Spider):
     name = 'spx500_prices'
@@ -37,24 +38,22 @@ class SPX500PricesSpider(scrapy.Spider):
             # Format the Yahoo Finance URL
             ticker = ticker.replace('.', '-')
             params = {
-                'period1': int(datetime(2000, 1, 1, tzinfo=timezone.utc).timestamp()),
+                'period1': int(datetime(1900, 1, 1, tzinfo=timezone.utc).timestamp()),
                 'period2': int(datetime.now(timezone.utc).timestamp()),
                 'interval': '1d',
                 'events': 'history',
                 'includeAdjustedClose': 'true'
             }
             
-            url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}'
+            url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?' + urlencode(params)
             
             yield scrapy.Request(
                 url=url,
-                callback=self.parse,
                 headers=self.headers,
                 meta={'symbol_id': symbol_id},
-                cb_kwargs={'params': params}
             )
 
-    def parse(self, response, params):
+    def parse(self, response):
         symbol_id = response.meta['symbol_id']
         
         try:

@@ -43,7 +43,7 @@ class SPX500SymbolsSpider(scrapy.Spider):
             item = SymbolItem()
             item['exchange_id'] = exchange_id
             item['ticker'] = cells[0].css('a::text').get().strip()
-            item['instrument'] = 'stock'
+            item['instrument'] = 'equity'
             item['name'] = cells[1].css('a::text').get().strip()
             item['sector'] = cells[2].css('::text').get().strip()
             item['sub_industry'] = cells[3].css('::text').get().strip()
